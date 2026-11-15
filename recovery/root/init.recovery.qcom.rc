@@ -40,6 +40,7 @@ on fs
     mkdir /vendor/firmware_mnt
     mount vfat /dev/block/bootdevice/by-name/apnhlos /vendor/firmware_mnt
     # Touch driver only loads firmware from a filesystem other than rootfs
+    mkdir /vendor/firmware
     mount tmpfs tmpfs /vendor/firmware
     exec - root root -- /system/bin/sh -c "cp /fw/* /vendor/firmware/"
     # ANDROID_ROOT
