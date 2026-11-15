@@ -42,7 +42,7 @@ on fs
     # Touch driver only loads firmware from a filesystem other than rootfs
     mkdir /vendor/firmware
     mount tmpfs tmpfs /vendor/firmware
-    exec - root root -- /system/bin/sh -c "cp /fw/* /vendor/firmware/"
+    exec - root root -- /system/bin/sh -c "/system/bin/cp -R /fw/. /vendor/firmware/"
     # ANDROID_ROOT
     export ANDROID_ROOT /system_root
 
