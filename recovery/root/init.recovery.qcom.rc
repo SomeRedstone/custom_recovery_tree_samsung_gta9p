@@ -39,6 +39,11 @@ on fs
     # Mount firmware
     mkdir /vendor/firmware_mnt
     mount vfat /dev/block/bootdevice/by-name/apnhlos /vendor/firmware_mnt
+    # Mount efs for the keymaster GAK keys
+    mkdir /efs
+    mount ext4 /dev/block/bootdevice/by-name/efs /efs
+    mkdir /mnt/vendor
+    symlink /efs /mnt/vendor/efs
     # Touch driver only loads firmware from a filesystem other than rootfs
     mkdir /vendor/firmware
     mount tmpfs tmpfs /vendor/firmware
