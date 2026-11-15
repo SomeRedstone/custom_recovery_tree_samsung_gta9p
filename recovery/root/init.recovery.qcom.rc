@@ -42,7 +42,47 @@ on fs
     # Touch driver only loads firmware from a filesystem other than rootfs
     mkdir /vendor/firmware
     mount tmpfs tmpfs /vendor/firmware
-    exec - root root -- /system/bin/sh -c "/system/bin/cp -R /fw/. /vendor/firmware/"
+    copy /fw/CS32Fxx_pad.bin /vendor/firmware/CS32Fxx_pad.bin
+    copy /fw/Jadard_firmware.bin /vendor/firmware/Jadard_firmware.bin
+    copy /fw/MH2113C_kb.bin /vendor/firmware/MH2113C_kb.bin
+    copy /fw/a619_gmu.bin /vendor/firmware/a619_gmu.bin
+    copy /fw/a660_gmu.bin /vendor/firmware/a660_gmu.bin
+    copy /fw/a660_zap.mdt /vendor/firmware/a660_zap.mdt
+    copy /fw/apnv11.bin /vendor/firmware/apnv11.bin
+    copy /fw/bdwlan.bin /vendor/firmware/bdwlan.bin
+    copy /fw/chipone_icnl9951r_fw_boe.bin /vendor/firmware/chipone_icnl9951r_fw_boe.bin
+    copy /fw/chipone_icnl9951r_fw_dijin.bin /vendor/firmware/chipone_icnl9951r_fw_dijin.bin
+    copy /fw/chipone_icnl9951r_fw_hjr.bin /vendor/firmware/chipone_icnl9951r_fw_hjr.bin
+    copy /fw/chipone_icnl9951r_fw_txd.bin /vendor/firmware/chipone_icnl9951r_fw_txd.bin
+    copy /fw/chipone_icnl9951r_fw_xinxian.bin /vendor/firmware/chipone_icnl9951r_fw_xinxian.bin
+    copy /fw/chipone_icnl9951r_fw_xinxian_agc.bin /vendor/firmware/chipone_icnl9951r_fw_xinxian_agc.bin
+    copy /fw/crnv21.bin /vendor/firmware/crnv21.bin
+    copy /fw/evass-lt.mbn /vendor/firmware/evass-lt.mbn
+    copy /fw/evass-lt.mdt /vendor/firmware/evass-lt.mdt
+    copy /fw/evass.mbn /vendor/firmware/evass.mbn
+    copy /fw/evass.mdt /vendor/firmware/evass.mdt
+    copy /fw/focaltech_ft8203_fw_boe.bin /vendor/firmware/focaltech_ft8203_fw_boe.bin
+    copy /fw/focaltech_ft8203_fw_dsbj.bin /vendor/firmware/focaltech_ft8203_fw_dsbj.bin
+    copy /fw/focaltech_ft8203_mp_boe.ini /vendor/firmware/focaltech_ft8203_mp_boe.ini
+    copy /fw/focaltech_ft8203_mp_dsbj.ini /vendor/firmware/focaltech_ft8203_mp_dsbj.ini
+    copy /fw/himax_hx83102j_fw_lide.bin /vendor/firmware/himax_hx83102j_fw_lide.bin
+    copy /fw/himax_hx83102j_fw_starry.bin /vendor/firmware/himax_hx83102j_fw_starry.bin
+    copy /fw/himax_hx83102j_fw_starry_agc.bin /vendor/firmware/himax_hx83102j_fw_starry_agc.bin
+    copy /fw/himax_hx83102j_mp_lide.bin /vendor/firmware/himax_hx83102j_mp_lide.bin
+    copy /fw/himax_hx83102j_mp_starry.bin /vendor/firmware/himax_hx83102j_mp_starry.bin
+    copy /fw/himax_hx83102j_mp_starry_agc.bin /vendor/firmware/himax_hx83102j_mp_starry_agc.bin
+    copy /fw/ipa_fws.mdt /vendor/firmware/ipa_fws.mdt
+    copy /fw/regdb.bin /vendor/firmware/regdb.bin
+    copy /fw/vpu20_1v.mbn /vendor/firmware/vpu20_1v.mbn
+    copy /fw/vpu20_1v.mdt /vendor/firmware/vpu20_1v.mdt
+    copy /fw/vpu20_1v_unsigned.mbn /vendor/firmware/vpu20_1v_unsigned.mbn
+    copy /fw/vpu20_2v.mbn /vendor/firmware/vpu20_2v.mbn
+    copy /fw/vpu20_2v.mdt /vendor/firmware/vpu20_2v.mdt
+    copy /fw/vpu20_2v_unsigned.mbn /vendor/firmware/vpu20_2v_unsigned.mbn
+    copy /fw/vpu20_4v.mbn /vendor/firmware/vpu20_4v.mbn
+    copy /fw/vpu20_4v.mdt /vendor/firmware/vpu20_4v.mdt
+    copy /fw/vpu20_4v_unsigned.mbn /vendor/firmware/vpu20_4v_unsigned.mbn
+    copy /fw/wlanmdsp.mbn /vendor/firmware/wlanmdsp.mbn
     # ANDROID_ROOT
     export ANDROID_ROOT /system_root
 
