@@ -153,8 +153,6 @@ VENDOR_SECURITY_PATCH := 2099-12-31
 PLATFORM_SECURITY_PATCH := $(VENDOR_SECURITY_PATCH)
 PLATFORM_VERSION := 99.87.36
 PLATFORM_VERSION_LAST_STABLE := $(PLATFORM_VERSION)
-# Report stock values in the boot header; keymaster checks them against
-# stored key blobs
 BOARD_RECOVERY_MKBOOTIMG_ARGS += --os_version 15.0.0 --os_patch_level 2025-10
 
 # Verified Boot
@@ -192,13 +190,13 @@ TW_THEME := portrait_hdpi
 TW_EXTRA_LANGUAGES := true
 TW_SCREEN_BLANK_ON_BOOT := true
 TW_BRIGHTNESS_PATH := "/sys/class/backlight/panel0-backlight/brightness"
-TW_CUSTOM_CPU_TEMP_PATH := "/sys/class/thermal/thermal_zone4/temp"
+TW_CUSTOM_CPU_TEMP_PATH := "/sys/class/thermal/thermal_zone34/temp"
 TW_INPUT_BLACKLIST := "hbtp_vm"
 TW_USE_TOOLBOX := true
 TW_EXCLUDE_TWRPAPP := true
 TW_INCLUDE_NTFS_3G := true
 TW_HAS_DOWNLOAD_MODE := true
-TW_MAX_BRIGHTNESS := 200
+TW_MAX_BRIGHTNESS := 255
 TW_INCLUDE_RESETPROP := true
 TW_INCLUDE_LIBRESETPROP := true
 TW_NO_REBOOT_BOOTLOADER := true
