@@ -5,8 +5,9 @@ ro.crypto.volume.filenames_mode=aes-256-cts
 ro.crypto.volume.metadata.method=dm-default-key
 ro.crypto.dm_default_key.options_format.version=2
 ro.crypto.volume.options=::v2
-ro.security.keystore.keytype=sakv2,gak
+ro.security.keystore.keytype=sakm,gak,
 ro.hardware.keystore=mdfpp
+ro.hardware.keystore_desede=true
 ro.hardware.gatekeeper=mdfpp
 
 # USB
