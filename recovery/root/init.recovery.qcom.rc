@@ -44,6 +44,11 @@ on fs
     mount ext4 /dev/block/bootdevice/by-name/efs /efs
     mkdir /mnt/vendor
     symlink /efs /mnt/vendor/efs
+    # Start the TEE HALs before decryption so keymaster does not race
+    # vendor.sys.listeners.registered
+    start qseecomd
+    start keymaster-4-0
+    start gatekeeper-1-0
     # Touch driver only loads firmware from a filesystem other than rootfs
     mkdir /vendor/firmware
     mount tmpfs tmpfs /vendor/firmware
