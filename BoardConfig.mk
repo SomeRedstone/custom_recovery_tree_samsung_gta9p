@@ -153,12 +153,20 @@ VENDOR_SECURITY_PATCH := 2099-12-31
 PLATFORM_SECURITY_PATCH := $(VENDOR_SECURITY_PATCH)
 PLATFORM_VERSION := 99.87.36
 PLATFORM_VERSION_LAST_STABLE := $(PLATFORM_VERSION)
+# Report stock values in the boot header; keymaster checks them against
+# stored key blobs
+BOARD_RECOVERY_MKBOOTIMG_ARGS += --os_version 15.0.0 --os_patch_level 2025-10
 
 # Verified Boot
 BOARD_AVB_ENABLE := true
 BOARD_AVB_MAKE_VBMETA_IMAGE_ARGS += --flags 3
 BOARD_AVB_RECOVERY_KEY_PATH := external/avb/test/data/testkey_rsa4096.pem
 BOARD_AVB_RECOVERY_ALGORITHM := SHA256_RSA4096
+BOARD_AVB_RECOVERY_ADD_HASH_FOOTER_ARGS += \
+    --prop com.android.build.boot.os_version:15 \
+    --prop com.android.build.boot.security_patch:2025-10-01 \
+    --prop com.android.build.vendor.os_version:15 \
+    --prop com.android.build.vendor.security_patch:2025-10-01
 BOARD_AVB_RECOVERY_ROLLBACK_INDEX := 1
 BOARD_AVB_RECOVERY_ROLLBACK_INDEX_LOCATION := 1
 
