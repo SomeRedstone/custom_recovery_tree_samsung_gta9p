@@ -6,6 +6,10 @@ on:
       version:
         description: PDA or full firmware version
         required: true
+      partitions:
+        description: Comma-separated images from the AP package
+        default: boot.img
+        required: true
       model:
         description: Model
         default: SM-X216B
@@ -23,7 +27,7 @@ env:
   SAMLOADER_SHA256: f6029dcce75b8a66acc1975529085c53903f7cdb35505e0ac0a973f2652480ff
 
 jobs:
-  boot:
+  images:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -70,18 +74,21 @@ jobs:
           mkdir -p fw
           samloader download -m "$MODEL" -r "$CSC" -v "$VERSION" -d fw
 
-      - name: Extract boot image
+      - name: Extract images
+        env:
+          PARTITIONS: ${{ inputs.partitions }}
         run: |
           mkdir -p out
           python3 tools/firmware_image.py \
             --firmware fw/*.zip \
-            --image boot.img \
-            --out out/boot.img
-          sha256sum out/boot.img | tee -a "$GITHUB_STEP_SUMMARY"
-          du -h out/boot.img | tee -a "$GITHUB_STEP_SUMMARY"
+            --images "$PARTITIONS" \
+            --out out
+          cd out
+          sha256sum * | tee -a "$GITHUB_STEP_SUMMARY"
+          du -h * | tee -a "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload boot image
+      - name: Upload images
         uses: actions/upload-artifact@v4
         with:
-          name: boot-${{ steps.resolve.outputs.pda }}
-          path: out/boot.img
+          name: images-${{ steps.resolve.outputs.pda }}
+          path: out/*
