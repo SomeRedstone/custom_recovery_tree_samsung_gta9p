@@ -1,0 +1,124 @@
+name: Firmware Evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Model
+        default: SM-X216B
+        required: true
+      csc:
+        description: CSC
+        default: EGY
+        required: true
+      versions:
+        description: Comma-separated PDAs or full versions; blank selects One UI 7 builds
+        default: ""
+      fail_on_mismatch:
+        description: Fail on critical mismatches
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  SAMLOADER_URL: https://github.com/topjohnwu/samloader-rs/releases/download/2.2.0/samloader-v2.2.0-linux-x86_64.zip
+  SAMLOADER_SHA256: f6029dcce75b8a66acc1975529085c53903f7cdb35505e0ac0a973f2652480ff
+
+jobs:
+  matrix:
+    runs-on: ubuntu-22.04
+    outputs:
+      include: ${{ steps.matrix.outputs.include }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install samloader
+        run: |
+          curl -fsSL "$SAMLOADER_URL" -o samloader.zip
+          echo "$SAMLOADER_SHA256  samloader.zip" | sha256sum -c -
+          mkdir -p "$HOME/.local/bin"
+          unzip -q samloader.zip -d "$HOME/.local/bin"
+          chmod +x "$HOME/.local/bin/samloader"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Build matrix
+        id: matrix
+        env:
+          MODEL: ${{ inputs.model }}
+          CSC: ${{ inputs.csc }}
+          REQUESTED: ${{ inputs.versions }}
+        run: |
+          samloader check-update -m "$MODEL" -r "$CSC" -a > history.txt
+          python3 tools/firmware_evidence.py matrix \
+            --history history.txt \
+            --model "$MODEL" \
+            --csc "$CSC" \
+            --requested "$REQUESTED" > matrix.json
+          echo "include=$(jq -c . matrix.json)" >> "$GITHUB_OUTPUT"
+
+  evidence:
+    needs: matrix
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.matrix.outputs.include) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: false
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: false
+
+      - name: Install samloader
+        run: |
+          curl -fsSL "$SAMLOADER_URL" -o samloader.zip
+          echo "$SAMLOADER_SHA256  samloader.zip" | sha256sum -c -
+          mkdir -p "$HOME/.local/bin"
+          unzip -q samloader.zip -d "$HOME/.local/bin"
+          chmod +x "$HOME/.local/bin/samloader"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Download firmware
+        env:
+          MODEL: ${{ inputs.model }}
+          CSC: ${{ inputs.csc }}
+          VERSION: ${{ matrix.version }}
+        run: |
+          mkdir -p fw
+          samloader download -m "$MODEL" -r "$CSC" -v "$VERSION" -d fw
+
+      - name: Inspect images
+        env:
+          MODEL: ${{ inputs.model }}
+          CSC: ${{ inputs.csc }}
+          PDA: ${{ matrix.pda }}
+          FAIL_ON_MISMATCH: ${{ inputs.fail_on_mismatch }}
+        run: |
+          args=()
+          if [ "$FAIL_ON_MISMATCH" = "true" ]; then
+            args+=(--fail-on-mismatch)
+          fi
+          python3 tools/firmware_evidence.py extract \
+            --firmware fw/*.zip \
+            --out "out/$PDA" \
+            --model "$MODEL" \
+            --csc "$CSC" \
+            --pda "$PDA" \
+            "${args[@]}"
+
+      - name: Summarize
+        run: cat "out/${{ matrix.pda }}/evidence.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-${{ matrix.pda }}
+          path: out/${{ matrix.pda }}
