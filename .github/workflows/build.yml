@@ -77,6 +77,11 @@ jobs:
         echo "COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_ENV
         echo "VERSION=$(grep '^TW_DEVICE_VERSION' version.mk | awk '{print $3}')" >> $GITHUB_ENV
 
+    - name: Apply TWRP patches
+      run: |
+        cd twrp/bootable/recovery
+        git apply ../../device/samsung/gta9p/patches/0001-keep-twrp-stock-boot.patch
+
     - name: Building Image
       run: |
         echo "BUILD_DATE=$(date +%Y%m%d)" >> $GITHUB_ENV

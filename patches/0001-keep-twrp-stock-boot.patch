@@ -1,0 +1,260 @@
+--- a/data.cpp
++++ b/data.cpp
+@@ -970,6 +970,7 @@
+ #endif
+ 
+ 	mData.SetValue("tw_flash_both_slots", "0");
++	mData.SetValue("tw_keep_recovery", "0");
+ 	mData.SetValue("tw_is_slot_part", "0");
+ 
+ 	mData.SetValue("tw_enable_adb_backup", "0");
+--- a/gui/theme/common/portrait.xml
++++ b/gui/theme/common/portrait.xml
+@@ -705,6 +705,36 @@
+ 				<action function="set">tw_flash_both_slots=0</action>
+ 			</button>
+ 
++			<button style="checkbox">
++				<conditions>
++					<condition var1="tw_flash_partition" op="=" var2="/boot;"/>
++					<condition var1="tw_keep_recovery" op="!=" var2="1"/>
++				</conditions>
++				<placement x="%indent%" y="%row18a_y%" textplacement="6"/>
++				<text>{@keep_twrp=Keep TWRP (experimental)}</text>
++				<image resource="checkbox_false"/>
++				<action function="set">tw_keep_recovery=1</action>
++			</button>
++
++			<button style="checkbox">
++				<conditions>
++					<condition var1="tw_flash_partition" op="=" var2="/boot;"/>
++					<condition var1="tw_keep_recovery" op="=" var2="1"/>
++				</conditions>
++				<placement x="%indent%" y="%row18a_y%" textplacement="6"/>
++				<text>{@keep_twrp=Keep TWRP (experimental)}</text>
++				<image resource="checkbox_true"/>
++				<action function="set">tw_keep_recovery=0</action>
++			</button>
++
++			<text style="text_s">
++				<conditions>
++					<condition var1="tw_flash_partition" op="=" var2="/boot;"/>
++				</conditions>
++				<placement x="%indent%" y="%row20_y%"/>
++				<text>{@keep_twrp_warn=Only check this if you know what you are doing.}</text>
++			</text>
++
+ 			<slider>
+ 				<text>{@swipe_flash=Swipe to confirm Flash}</text>
+ 				<actions>
+--- a/partitionmanager.cpp
++++ b/partitionmanager.cpp
+@@ -72,6 +72,7 @@
+ #include "gui/gui.hpp"
+ #include "progresstracking.hpp"
+ #include "twrpDigestDriver.hpp"
++#include "twrpDigest/twrpSHA.hpp"
+ #include "twrpRepacker.hpp"
+ #include "adbbu/libtwadbbu.hpp"
+ 
+@@ -2995,6 +2996,187 @@
+ 	return false;
+ }
+ 
++static uint32_t Read_BE32(const unsigned char* p) {
++	return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
++}
++
++static uint64_t Read_BE64(const unsigned char* p) {
++	return ((uint64_t)Read_BE32(p) << 32) | Read_BE32(p + 4);
++}
++
++static bool All_Zero(const unsigned char* data, size_t len) {
++	for (size_t i = 0; i < len; i++)
++		if (data[i] != 0)
++			return false;
++	return true;
++}
++
++// Stock install-recovery.sh restores the stock recovery only while boot still
++// matches its hash; mark boot padding outside the AVB hash to break that check.
++static bool Keep_TWRP_Tweak_Boot(const string& image, TWPartition* part) {
++	int fd = open(image.c_str(), O_RDONLY | O_CLOEXEC);
++	if (fd < 0) {
++		LOGERR("[REDSTONE] keep-twrp: patch failed: cannot open image\n");
++		return false;
++	}
++	off_t file_size = lseek(fd, 0, SEEK_END);
++	unsigned char footer[64];
++	if (file_size < 4096 ||
++			pread(fd, footer, sizeof(footer), file_size - sizeof(footer)) != (ssize_t)sizeof(footer) ||
++			memcmp(footer, "AVBf", 4) != 0) {
++		LOGINFO("[REDSTONE] keep-twrp: stock boot hash not found (no AVB footer)\n");
++		close(fd);
++		return false;
++	}
++	uint64_t orig_size = Read_BE64(footer + 12);
++	uint64_t vbmeta_offset = Read_BE64(footer + 20);
++	uint64_t vbmeta_size = Read_BE64(footer + 28);
++	if (orig_size == 0 || vbmeta_size < 256 || vbmeta_size > 65536 ||
++			vbmeta_offset < orig_size || vbmeta_offset + vbmeta_size > (uint64_t)file_size) {
++		LOGINFO("[REDSTONE] keep-twrp: stock boot hash not found (bad AVB footer)\n");
++		close(fd);
++		return false;
++	}
++	unsigned char vbmeta[65536];
++	if (pread(fd, vbmeta, vbmeta_size, vbmeta_offset) != (ssize_t)vbmeta_size ||
++			memcmp(vbmeta, "AVB0", 4) != 0) {
++		LOGINFO("[REDSTONE] keep-twrp: stock boot hash not found (bad AVB metadata)\n");
++		close(fd);
++		return false;
++	}
++	uint64_t desc_start = 256 + Read_BE64(vbmeta + 12) + Read_BE64(vbmeta + 96);
++	uint64_t desc_end = desc_start + Read_BE64(vbmeta + 104);
++	if (desc_start < 256 || desc_end > vbmeta_size) {
++		LOGINFO("[REDSTONE] keep-twrp: stock boot hash not found (bad AVB descriptors)\n");
++		close(fd);
++		return false;
++	}
++
++	uint64_t hash_size = 0, name_len = 0, salt_len = 0, digest_len = 0;
++	const unsigned char* salt = NULL;
++	const unsigned char* expected = NULL;
++	string algorithm, name;
++	for (uint64_t pos = desc_start; pos + 16 <= desc_end; ) {
++		uint64_t len = 0;
++		const unsigned char* body = vbmeta + pos + 16;
++		if (Read_BE64(vbmeta + pos) == 2) { // AVB_DESCRIPTOR_TAG_HASH
++			if (pos + 32 > desc_end)
++				break;
++			len = Read_BE64(vbmeta + pos + 8);
++			if (len < 116 || pos + 16 + len > desc_end)
++				break;
++			hash_size = Read_BE64(body);
++			algorithm.assign((const char*)body + 8, strnlen((const char*)body + 8, 32));
++			name_len = Read_BE32(body + 40);
++			salt_len = Read_BE32(body + 44);
++			digest_len = Read_BE32(body + 48);
++			if (116 + name_len + salt_len + digest_len > len)
++				break;
++			name.assign((const char*)body + 116, name_len);
++			salt = body + 116 + name_len;
++			expected = salt + salt_len;
++			break;
++		}
++		len = Read_BE64(vbmeta + pos + 8);
++		if (pos + 16 + len > desc_end)
++			break;
++		pos += 16 + len;
++	}
++	if (salt == NULL || name != "boot" || algorithm != "sha256" || digest_len != 32 ||
++			hash_size == 0 || hash_size > (uint64_t)file_size) {
++		LOGINFO("[REDSTONE] keep-twrp: stock boot hash not found (no boot hash descriptor)\n");
++		close(fd);
++		return false;
++	}
++
++	twrpSHA256 sha;
++	twrpDigest* digest = &sha;
++	digest->update(salt, salt_len);
++	unsigned char buf[65536];
++	uint64_t left = hash_size;
++	bool read_ok = true;
++	while (left > 0) {
++		size_t chunk = left > sizeof(buf) ? sizeof(buf) : (size_t)left;
++		if (pread(fd, buf, chunk, hash_size - left) != (ssize_t)chunk) {
++			read_ok = false;
++			break;
++		}
++		digest->update(buf, chunk);
++		left -= chunk;
++	}
++	if (!read_ok) {
++		LOGERR("[REDSTONE] keep-twrp: patch failed: cannot read image\n");
++		close(fd);
++		return false;
++	}
++	char expected_hex[65];
++	for (int i = 0; i < 32; i++)
++		snprintf(expected_hex + (i * 2), 3, "%02x", expected[i]);
++	if (digest->return_digest_string() != expected_hex) {
++		LOGINFO("[REDSTONE] keep-twrp: stock boot hash not found (image is modified)\n");
++		close(fd);
++		return false;
++	}
++	LOGINFO("[REDSTONE] keep-twrp: stock boot hash verified\n");
++
++	uint64_t base = orig_size > hash_size ? orig_size : hash_size;
++	uint64_t offset = (base + 65535) & ~(uint64_t)65535;
++	unsigned char run[16];
++	for (;; offset += 65536) {
++		if (offset + sizeof(run) > (uint64_t)file_size)
++			break;
++		if (offset < vbmeta_offset + vbmeta_size && offset + sizeof(run) > vbmeta_offset)
++			continue;
++		if (pread(fd, run, sizeof(run), offset) == (ssize_t)sizeof(run) && All_Zero(run, sizeof(run)))
++			break;
++	}
++	if (offset + sizeof(run) > (uint64_t)file_size) {
++		LOGERR("[REDSTONE] keep-twrp: patch failed: no safe padding found\n");
++		close(fd);
++		return false;
++	}
++
++	if (part->Size != 0 && offset + sizeof(run) > part->Size) {
++		LOGERR("[REDSTONE] keep-twrp: patch failed: padding outside partition\n");
++		close(fd);
++		return false;
++	}
++	close(fd);
++
++	int pfd = open(part->Actual_Block_Device.c_str(), O_RDWR | O_CLOEXEC);
++	if (pfd < 0) {
++		LOGERR("[REDSTONE] keep-twrp: patch failed: cannot open %s\n", part->Actual_Block_Device.c_str());
++		return false;
++	}
++	unsigned char current[16];
++	if (pread(pfd, current, sizeof(current), offset) != (ssize_t)sizeof(current)) {
++		LOGERR("[REDSTONE] keep-twrp: patch failed: cannot read boot padding\n");
++		close(pfd);
++		return false;
++	}
++	bool blank = All_Zero(current, sizeof(current));
++	bool marked = current[0] == 0x01 && All_Zero(current + 1, sizeof(current) - 1);
++	if (!blank && !marked) {
++		LOGERR("[REDSTONE] keep-twrp: patch failed: unexpected data at offset %llu\n", (unsigned long long)offset);
++		close(pfd);
++		return false;
++	}
++	if (blank) {
++		unsigned char one = 0x01;
++		if (pwrite(pfd, &one, 1, offset) != 1) {
++			LOGERR("[REDSTONE] keep-twrp: patch failed: write error: %s\n", strerror(errno));
++			close(pfd);
++			return false;
++		}
++		fsync(pfd);
++		LOGINFO("[REDSTONE] keep-twrp: patch applied at offset %llu\n", (unsigned long long)offset);
++	} else {
++		LOGINFO("[REDSTONE] keep-twrp: patch already applied at offset %llu\n", (unsigned long long)offset);
++	}
++	close(pfd);
++	return true;
++}
++
+ bool TWPartitionManager::Flash_Image(string& path, string& filename) {
+ 	twrpRepacker repacker;
+ 	int partition_count = 0;
+@@ -3070,6 +3252,12 @@
+ 		flash_part->Backup_FileName = filename;
+ 		if (!flash_part->Flash_Image(&part_settings))
+ 			return false;
++		if (DataManager::GetIntValue("tw_keep_recovery") != 0) {
++			if (flash_path == "/boot")
++				Keep_TWRP_Tweak_Boot(full_filename, flash_part);
++			else
++				LOGINFO("[REDSTONE] keep-twrp: target is not /boot, nothing to do\n");
++		}
+ 	} else {
+ 		gui_err("invalid_flash=Invalid flash partition specified.");
+ 		return false;
