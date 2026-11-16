@@ -7,9 +7,9 @@ on:
         description: Model
         default: SM-X216B
         required: true
-      csc:
-        description: CSC
-        default: EGY
+      cscs:
+        description: Comma-separated CSCs, earlier ones win
+        default: EGY,ZTO
         required: true
       versions:
         description: Comma-separated PDAs or full versions; blank selects One UI 7 builds
@@ -47,14 +47,19 @@ jobs:
         id: matrix
         env:
           MODEL: ${{ inputs.model }}
-          CSC: ${{ inputs.csc }}
+          CSCS: ${{ inputs.cscs }}
           REQUESTED: ${{ inputs.versions }}
         run: |
-          samloader check-update -m "$MODEL" -r "$CSC" -a > history.txt
+          first=$(echo "$CSCS" | cut -d, -f1 | xargs)
+          echo "$CSCS" | tr ',' '\n' | while read -r code; do
+            code=$(echo "$code" | xargs)
+            [ -z "$code" ] && continue
+            samloader check-update -m "$MODEL" -r "$code" -a | sed "s#^#$code|#" >> history.txt
+          done
           python3 tools/firmware_evidence.py matrix \
             --history history.txt \
             --model "$MODEL" \
-            --csc "$CSC" \
+            --csc "$first" \
             --requested "$REQUESTED" > matrix.json
           echo "include=$(jq -c . matrix.json)" >> "$GITHUB_OUTPUT"
 
@@ -84,7 +89,7 @@ jobs:
       - name: Download firmware
         env:
           MODEL: ${{ inputs.model }}
-          CSC: ${{ inputs.csc }}
+          CSC: ${{ matrix.csc }}
           VERSION: ${{ matrix.version }}
         run: |
           mkdir -p fw
@@ -93,7 +98,7 @@ jobs:
       - name: Inspect images
         env:
           MODEL: ${{ inputs.model }}
-          CSC: ${{ inputs.csc }}
+          CSC: ${{ matrix.csc }}
           PDA: ${{ matrix.pda }}
           FAIL_ON_MISMATCH: ${{ inputs.fail_on_mismatch }}
         run: |

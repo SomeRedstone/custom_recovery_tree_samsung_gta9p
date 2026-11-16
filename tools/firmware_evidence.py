@@ -522,9 +522,14 @@ def handle_matrix(args):
     history = {}
     for line in Path(args.history).read_text().splitlines():
         line = line.strip()
+        if not line:
+            continue
+        csc = args.csc
+        if "|" in line:
+            csc, line = line.split("|", 1)
         parts = line.split("/")
         if len(parts) == 4:
-            history[parts[0]] = line
+            history.setdefault(parts[0], (csc, line))
     requested = [item.strip() for item in re.split(r"[,\n]", args.requested) if item.strip()]
     if not requested:
         requested = [pda for pda in ONE_UI_7_PDA if pda in history]
@@ -532,12 +537,13 @@ def handle_matrix(args):
     for item in requested:
         parts = item.split("/")
         if len(parts) == 4:
-            include.append({"version": item, "pda": parts[0]})
+            include.append({"version": item, "pda": parts[0], "csc": args.csc})
         elif item in history:
-            include.append({"version": history[item], "pda": item})
+            csc, version = history[item]
+            include.append({"version": version, "pda": item, "csc": csc})
         else:
             raise SystemExit(
-                f"{item} is not in the {args.model}/{args.csc} history; known: "
+                f"{item} is not in the firmware history; known: "
                 + ", ".join(sorted(history))
             )
     if not include:
