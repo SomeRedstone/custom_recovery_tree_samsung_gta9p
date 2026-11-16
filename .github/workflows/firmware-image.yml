@@ -1,0 +1,87 @@
+name: Firmware Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: PDA or full firmware version
+        required: true
+      model:
+        description: Model
+        default: SM-X216B
+        required: true
+      csc:
+        description: CSC
+        default: EGY
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  SAMLOADER_URL: https://github.com/topjohnwu/samloader-rs/releases/download/2.2.0/samloader-v2.2.0-linux-x86_64.zip
+  SAMLOADER_SHA256: f6029dcce75b8a66acc1975529085c53903f7cdb35505e0ac0a973f2652480ff
+
+jobs:
+  boot:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install lz4
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y lz4
+
+      - name: Install samloader
+        run: |
+          curl -fsSL "$SAMLOADER_URL" -o samloader.zip
+          echo "$SAMLOADER_SHA256  samloader.zip" | sha256sum -c -
+          mkdir -p "$HOME/.local/bin"
+          unzip -q samloader.zip -d "$HOME/.local/bin"
+          chmod +x "$HOME/.local/bin/samloader"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve version
+        id: resolve
+        env:
+          MODEL: ${{ inputs.model }}
+          CSC: ${{ inputs.csc }}
+          REQUESTED: ${{ inputs.version }}
+        run: |
+          samloader check-update -m "$MODEL" -r "$CSC" -a > history.txt
+          python3 tools/firmware_evidence.py matrix \
+            --history history.txt \
+            --model "$MODEL" \
+            --csc "$CSC" \
+            --requested "$REQUESTED" > matrix.json
+          {
+            echo "version=$(jq -r '.include[0].version' matrix.json)"
+            echo "pda=$(jq -r '.include[0].pda' matrix.json)"
+            echo "csc=$(jq -r '.include[0].csc' matrix.json)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Download firmware
+        env:
+          MODEL: ${{ inputs.model }}
+          CSC: ${{ steps.resolve.outputs.csc }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          mkdir -p fw
+          samloader download -m "$MODEL" -r "$CSC" -v "$VERSION" -d fw
+
+      - name: Extract boot image
+        run: |
+          mkdir -p out
+          python3 tools/firmware_image.py \
+            --firmware fw/*.zip \
+            --image boot.img \
+            --out out/boot.img
+          sha256sum out/boot.img | tee -a "$GITHUB_STEP_SUMMARY"
+          du -h out/boot.img | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload boot image
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-${{ steps.resolve.outputs.pda }}
+          path: out/boot.img
