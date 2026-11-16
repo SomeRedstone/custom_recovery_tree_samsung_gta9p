@@ -6,8 +6,10 @@ import os
 import re
 import shutil
 import struct
+import subprocess
 import sys
 import tarfile
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -333,9 +335,9 @@ def build_checks(evidence, expectations):
     fingerprint = expectations.get("fingerprint")
     if fingerprint:
         fields = fingerprint.split("/")
-        firmware_pda = fields[4].split(":")[0] if len(fields) > 4 else None
-        add("fingerprint PDA", expectations.get("pda"), firmware_pda,
-            firmware_pda == expectations.get("pda"))
+        tree_pda = fields[4].split(":")[0] if len(fields) > 4 else None
+        add("fingerprint PDA", tree_pda, expectations.get("pda"),
+            tree_pda == expectations.get("pda"))
     return checks
 
 
@@ -406,6 +408,56 @@ def inspect_images(images, model, csc, pda, expectations):
     return evidence
 
 
+def decompress_lz4(compressed, target, limit=None):
+    with open(target, "wb") as output:
+        process = subprocess.Popen(
+            ["lz4", "-d", "-c", compressed],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        remaining = limit
+        try:
+            while True:
+                size = 1024 * 1024 if remaining is None else min(1024 * 1024, remaining)
+                chunk = process.stdout.read(size)
+                if not chunk:
+                    break
+                output.write(chunk)
+                if remaining is not None:
+                    remaining -= len(chunk)
+                    if remaining <= 0:
+                        break
+        finally:
+            process.kill()
+            process.wait()
+
+
+def extract_member(member, source, target, read_limit=None, output_limit=None):
+    if member.name.endswith(".lz4"):
+        with tempfile.NamedTemporaryFile(delete=False) as temporary:
+            if read_limit is None:
+                shutil.copyfileobj(source, temporary)
+            else:
+                remaining = read_limit
+                while remaining > 0:
+                    chunk = source.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        break
+                    temporary.write(chunk)
+                    remaining -= len(chunk)
+            compressed = temporary.name
+        try:
+            decompress_lz4(compressed, target, output_limit)
+        finally:
+            os.unlink(compressed)
+    else:
+        with open(target, "wb") as output:
+            if read_limit is None:
+                shutil.copyfileobj(source, output)
+            else:
+                output.write(source.read(read_limit))
+
+
 def extract_firmware(firmware, out_dir):
     out_dir.mkdir(parents=True, exist_ok=True)
     images = out_dir / "images"
@@ -425,20 +477,34 @@ def extract_firmware(firmware, out_dir):
     else:
         stream = open(firmware, "rb")
 
+    targets = set(BOOT_IMAGES + VBMETA_IMAGES)
+    matched = set()
+    sample = []
     try:
         with tarfile.open(fileobj=stream, mode="r|", ignore_zeros=True) as tar:
             try:
                 for member in tar:
-                    base = Path(member.name).name
                     if not member.isfile():
                         continue
-                    if base in BOOT_IMAGES + VBMETA_IMAGES:
-                        target = images / base
-                        with tar.extractfile(member) as source, open(target, "wb") as output:
-                            shutil.copyfileobj(source, output)
-                    elif base == "super.img":
+                    base = Path(member.name).name
+                    stem = base[:-4] if base.endswith(".lz4") else base
+                    if len(sample) < 20:
+                        sample.append(base)
+                    if stem in targets:
                         with tar.extractfile(member) as source:
-                            (images / "super.prefix").write_bytes(source.read(1024 * 1024))
+                            extract_member(member, source, images / stem)
+                        matched.add(stem)
+                    elif stem == "super.img":
+                        compressed = base.endswith(".lz4")
+                        with tar.extractfile(member) as source:
+                            extract_member(
+                                member,
+                                source,
+                                images / "super.prefix",
+                                read_limit=8 * 1024 * 1024 if compressed else 1024 * 1024,
+                                output_limit=2 * 1024 * 1024 if compressed else None,
+                            )
+                        matched.add(stem)
             except (tarfile.ReadError, EOFError) as error:
                 print(f"warning: stopped reading AP tar: {error}", file=sys.stderr)
     finally:
@@ -446,6 +512,9 @@ def extract_firmware(firmware, out_dir):
         if archive:
             archive.close()
 
+    if not matched:
+        print("AP tar members: " + ", ".join(sample), file=sys.stderr)
+        raise SystemExit("no boot, vbmeta, or super images found in AP tar")
     return images
 
 
