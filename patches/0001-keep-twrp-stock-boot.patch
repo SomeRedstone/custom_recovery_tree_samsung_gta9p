@@ -57,7 +57,7 @@
  #include "twrpRepacker.hpp"
  #include "adbbu/libtwadbbu.hpp"
  
-@@ -2995,6 +2996,187 @@
+@@ -2995,6 +2996,182 @@
  	return false;
  }
  
@@ -201,11 +201,6 @@
 +		return false;
 +	}
 +
-+	if (part->Size != 0 && offset + sizeof(run) > part->Size) {
-+		LOGERR("[REDSTONE] keep-twrp: patch failed: padding outside partition\n");
-+		close(fd);
-+		return false;
-+	}
 +	close(fd);
 +
 +	int pfd = open(part->Actual_Block_Device.c_str(), O_RDWR | O_CLOEXEC);
@@ -245,7 +240,7 @@
  bool TWPartitionManager::Flash_Image(string& path, string& filename) {
  	twrpRepacker repacker;
  	int partition_count = 0;
-@@ -3070,6 +3252,12 @@
+@@ -3070,6 +3247,12 @@
  		flash_part->Backup_FileName = filename;
  		if (!flash_part->Flash_Image(&part_settings))
  			return false;
