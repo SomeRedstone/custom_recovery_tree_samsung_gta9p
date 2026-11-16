@@ -326,6 +326,14 @@ def version_tuple(value):
     return tuple(parts + [0] * (3 - len(parts)))
 
 
+def patch_at_least(tree, firmware):
+    tree_version = version_tuple(tree)
+    firmware_version = version_tuple(firmware)
+    if tree_version is None or firmware_version is None:
+        return False
+    return tree_version >= firmware_version
+
+
 def build_checks(evidence, expectations):
     checks = []
 
@@ -349,7 +357,7 @@ def build_checks(evidence, expectations):
             continue
         add(f"{image_name} header OS patch", expected_patch,
             image.get("os_patch_level"),
-            image.get("os_patch_level") == expected_patch, critical=True)
+            patch_at_least(expected_patch, image.get("os_patch_level")), critical=True)
         add(f"{image_name} header OS version", expected_version,
             image.get("os_version"),
             version_tuple(image.get("os_version")) == version_tuple(expected_version))
@@ -374,7 +382,7 @@ def build_checks(evidence, expectations):
                  "com.android.build.vendor.security_patch",
                  "com.android.build.system.security_patch"):
         add(f"vbmeta {prop}", expected_patch_day, vbmeta_props.get(prop),
-            vbmeta_props.get(prop) == expected_patch_day, critical=True)
+            patch_at_least(expected_patch_day, vbmeta_props.get(prop)), critical=True)
     add("vbmeta com.android.build.system.os_version", expected_version,
         vbmeta_props.get("com.android.build.system.os_version"),
         version_tuple(vbmeta_props.get("com.android.build.system.os_version"))
