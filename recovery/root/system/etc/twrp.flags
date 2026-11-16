@@ -20,7 +20,6 @@
 /dsp            emmc		/dev/block/bootdevice/by-name/dsp
 /misc           emmc		/dev/block/bootdevice/by-name/misc
 /dtbo           emmc		/dev/block/bootdevice/by-name/dtbo                  flags=backup=1;flashimg;display="Dtbo"
-/cache          ext4		/dev/block/bootdevice/by-name/cache                  flags=backup=1;display="Cache"
 
 /optics_image       emmc		/dev/block/bootdevice/by-name/optics                flags=backup=1;flashimg;display="Optics Image"
 /prism_image        emmc		/dev/block/bootdevice/by-name/prism                 flags=backup=1;flashimg;display="Prism Image"
