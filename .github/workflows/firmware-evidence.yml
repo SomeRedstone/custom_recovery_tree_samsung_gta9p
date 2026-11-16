@@ -113,6 +113,7 @@ jobs:
             --csc "$CSC" \
             --pda "$PDA" \
             "${args[@]}"
+          rm -rf "out/$PDA/images"
 
       - name: Summarize
         run: cat "out/${{ matrix.pda }}/evidence.md" >> "$GITHUB_STEP_SUMMARY"
@@ -121,4 +122,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: evidence-${{ matrix.pda }}
-          path: out/${{ matrix.pda }}
+          path: |
+            out/${{ matrix.pda }}/evidence.json
+            out/${{ matrix.pda }}/evidence.md
