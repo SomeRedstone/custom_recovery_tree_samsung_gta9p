@@ -1,2 +1,2 @@
 # Should be included in BoardConfig.mk
-TW_DEVICE_VERSION := gta9p-008
+TW_DEVICE_VERSION := gta9p-009
