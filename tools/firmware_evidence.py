@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -17,9 +18,11 @@ SPARSE_MAGIC = 0xED26FF3A
 LP_METADATA_MAGIC = b"0PLA"
 AVB_FOOTER_MAGIC = b"AVBf"
 AVB_VBMETA_MAGIC = b"AVB0"
+PANEL_PATTERN = re.compile(rb"qcom,mdss_dsi_[a-z0-9_]+_video_display")
 
 BOOT_IMAGES = ("boot.img", "recovery.img", "init_boot.img", "vendor_boot.img")
 VBMETA_IMAGES = ("vbmeta.img", "vbmeta_system.img")
+DTBO_IMAGES = ("dtbo.img",)
 
 ONE_UI_7_PDA = (
     "X216BXXU6DYD9",
@@ -47,6 +50,44 @@ def decode_os_version(raw):
     version = f"{major}.{minor}.{patch}"
     date = f"{2000 + year:04d}-{month:02d}" if 1 <= month <= 12 else None
     return version, date
+
+
+def kernel_release(blob):
+    marker = b"Linux version "
+    index = blob.find(marker)
+    if index < 0:
+        return None
+    end = blob.find(b"\0", index)
+    if end < 0:
+        end = index + 256
+    fields = blob[index + len(marker):min(end, index + 256)].decode(
+        "utf-8", "replace").split()
+    return fields[0] if fields else None
+
+
+def kernel_details(path, header):
+    header_version = struct.unpack_from("<I", header, 40)[0]
+    kernel_size = struct.unpack_from("<I", header, 8)[0]
+    page_size = 4096 if header_version >= 3 else struct.unpack_from("<I", header, 36)[0]
+    if kernel_size == 0 or page_size < 512:
+        return {}
+    with open(path, "rb") as handle:
+        handle.seek(page_size)
+        kernel = handle.read(kernel_size)
+    return {
+        "kernel_size": len(kernel),
+        "kernel_sha256": hashlib.sha256(kernel).hexdigest(),
+        "kernel_release": kernel_release(kernel),
+    }
+
+
+def dtbo_details(path):
+    data = read_bytes(path)
+    return {
+        "size": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "panels": sorted({match.group().decode() for match in PANEL_PATTERN.finditer(data)}),
+    }
 
 
 def parse_boot_image(path):
@@ -79,6 +120,7 @@ def parse_boot_image(path):
         "os_version": os_version,
         "os_patch_level": os_patch,
     }
+    result.update(kernel_details(path, header))
 
     avb = parse_avb_footer(path)
     if avb:
@@ -255,6 +297,16 @@ def load_expectations(root):
     match = re.search(r"BUILD_FINGERPRINT\s*:=\s*(\S+)", product)
     if match:
         expectations["fingerprint"] = match.group(1)
+    kernel = root / "prebuilt" / "Image"
+    if kernel.exists():
+        blob = read_bytes(kernel)
+        expectations["kernel_release"] = kernel_release(blob)
+        expectations["kernel_sha256"] = hashlib.sha256(blob).hexdigest()
+    dtbo = root / "prebuilt" / "dtbo.img"
+    if dtbo.exists():
+        details = dtbo_details(dtbo)
+        expectations["dtbo_sha256"] = details["sha256"]
+        expectations["dtbo_panels"] = details["panels"]
     return expectations
 
 
@@ -338,23 +390,47 @@ def build_checks(evidence, expectations):
         tree_pda = fields[4].split(":")[0] if len(fields) > 4 else None
         add("fingerprint PDA", tree_pda, expectations.get("pda"),
             tree_pda == expectations.get("pda"))
+
+    expected_kernel = expectations.get("kernel_sha256")
+    if expected_kernel:
+        image = evidence.get("recovery") or {}
+        if image and "error" not in image:
+            add("recovery kernel sha256", expected_kernel,
+                image.get("kernel_sha256"),
+                image.get("kernel_sha256") == expected_kernel)
+
+    expected_dtbo = expectations.get("dtbo_sha256")
+    dtbo = evidence.get("dtbo") or {}
+    if expected_dtbo and not dtbo:
+        add("dtbo image", "present", "missing from AP tar", False)
+    elif expected_dtbo:
+        add("dtbo sha256", expected_dtbo, dtbo.get("sha256"),
+            dtbo.get("sha256") == expected_dtbo)
+    expected_panels = set(expectations.get("dtbo_panels") or [])
+    firmware_panels = set(dtbo.get("panels") or [])
+    if expected_panels and dtbo:
+        missing = sorted(firmware_panels - expected_panels)
+        add("dtbo panel overlays", f"{len(expected_panels)} panels",
+            f"{len(firmware_panels)} panels"
+            + (f"; missing {', '.join(missing)}" if missing else ""),
+            not missing, critical=True)
     return checks
 
 
 def evidence_markdown(evidence, checks):
     lines = [f"# Firmware evidence: {evidence['pda']} ({evidence['model']} / {evidence['csc']})", ""]
-    lines += ["## Boot images", "", "| Image | Header | OS version | Patch | AVB props |", "|---|---|---|---|---|"]
+    lines += ["## Boot images", "", "| Image | Header | OS version | Patch | Kernel | AVB props |", "|---|---|---|---|---|---|"]
     for name in ("boot", "recovery", "init_boot", "vendor_boot"):
         image = evidence.get(name)
         if not image:
             continue
         if "error" in image:
-            lines.append(f"| {name} | {image['error']} | | | |")
+            lines.append(f"| {name} | {image['error']} | | | | |")
             continue
         props = (image.get("avb") or {}).get("props", {})
         lines.append(
             f"| {name} | {image.get('header_version')} | {image.get('os_version')} | "
-            f"{image.get('os_patch_level')} | {len(props)} |"
+            f"{image.get('os_patch_level')} | {image.get('kernel_release') or '-'} | {len(props)} |"
         )
     lines += ["", "## VBMeta", "", "| Image | Release | Rollback | Props |", "|---|---|---|---|"]
     for name in ("vbmeta", "vbmeta_system"):
@@ -365,6 +441,13 @@ def evidence_markdown(evidence, checks):
             f"| {name} | {image.get('release_string')} | {image.get('rollback_index')} | "
             f"{len(image.get('props', {}))} |"
         )
+    dtbo = evidence.get("dtbo") or {}
+    if dtbo:
+        panels = ", ".join(f"`{name}`" for name in dtbo.get("panels", []))
+        lines += ["", "## DTBO", "",
+                  f"Size: {dtbo.get('size')} bytes", "",
+                  f"SHA256: `{dtbo.get('sha256')}`", "",
+                  f"Panels: {panels}", ""]
     super_image = evidence.get("super") or {}
     if super_image and "error" not in super_image:
         lines += ["", "## Super", "", "| Group | Max size | Logical size |", "|---|---|---|"]
@@ -402,6 +485,9 @@ def inspect_images(images, model, csc, pda, expectations):
     super_prefix = images / "super.prefix"
     if super_prefix.exists():
         evidence["super"] = parse_super_prefix(super_prefix)
+    dtbo = images / "dtbo.img"
+    if dtbo.exists():
+        evidence["dtbo"] = dtbo_details(dtbo)
     expectations = dict(expectations)
     expectations["pda"] = pda
     evidence["checks"] = build_checks(evidence, expectations)
@@ -477,7 +563,7 @@ def extract_firmware(firmware, out_dir):
     else:
         stream = open(firmware, "rb")
 
-    targets = set(BOOT_IMAGES + VBMETA_IMAGES)
+    targets = set(BOOT_IMAGES + VBMETA_IMAGES + DTBO_IMAGES)
     matched = set()
     sample = []
     try:
@@ -514,7 +600,7 @@ def extract_firmware(firmware, out_dir):
 
     if not matched:
         print("AP tar members: " + ", ".join(sample), file=sys.stderr)
-        raise SystemExit("no boot, vbmeta, or super images found in AP tar")
+        raise SystemExit("no boot, vbmeta, super, or dtbo images found in AP tar")
     return images
 
 
