@@ -18,6 +18,7 @@ SPARSE_MAGIC = 0xED26FF3A
 LP_METADATA_MAGIC = b"0PLA"
 AVB_FOOTER_MAGIC = b"AVBf"
 AVB_VBMETA_MAGIC = b"AVB0"
+DTBO_MAGIC = 0xD7B7AB1E
 PANEL_PATTERN = re.compile(rb"qcom,mdss_dsi_[a-z0-9_]+_video_display")
 
 BOOT_IMAGES = ("boot.img", "recovery.img", "init_boot.img", "vendor_boot.img")
@@ -83,6 +84,14 @@ def kernel_details(path, header):
 
 def dtbo_details(path):
     data = read_bytes(path)
+    if len(data) >= 8:
+        for endian in (">", "<"):
+            if struct.unpack_from(endian + "I", data, 0)[0] != DTBO_MAGIC:
+                continue
+            total_size = struct.unpack_from(endian + "I", data, 4)[0]
+            if 0 < total_size <= len(data):
+                data = data[:total_size]
+            break
     return {
         "size": len(data),
         "sha256": hashlib.sha256(data).hexdigest(),
