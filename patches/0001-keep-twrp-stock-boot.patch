@@ -8,6 +8,16 @@
  	mData.SetValue("tw_is_slot_part", "0");
  
  	mData.SetValue("tw_enable_adb_backup", "0");
+--- a/gui/theme/common/languages/en.xml
++++ b/gui/theme/common/languages/en.xml
+@@ -776,5 +776,7 @@
+ 		<string name="restore_with_pattern1">Pattern is enabled</string>
+ 		<string name="restore_with_pattern2">Pattern should be disabled before restore</string>
+ 		<string name="reboot_after_restore">It is recommended to reboot Android once after first boot.</string>
++		<string name="keep_twrp">Keep TWRP (experimental)</string>
++		<string name="keep_twrp_warn">Only check this if you know what you are doing.</string>
+ 	</resources>
+ </language>
 --- a/gui/theme/common/portrait.xml
 +++ b/gui/theme/common/portrait.xml
 @@ -705,6 +705,36 @@
@@ -89,7 +99,7 @@
 +	if (file_size < 4096 ||
 +			pread(fd, footer, sizeof(footer), file_size - sizeof(footer)) != (ssize_t)sizeof(footer) ||
 +			memcmp(footer, "AVBf", 4) != 0) {
-+		LOGINFO("[REDSTONE] keep-twrp: stock boot hash not found (no AVB footer)\n");
++		gui_print_color("warning", "I:[REDSTONE] keep-twrp: stock boot hash not found (no AVB footer)\n");
 +		close(fd);
 +		return false;
 +	}
@@ -98,21 +108,21 @@
 +	uint64_t vbmeta_size = Read_BE64(footer + 28);
 +	if (orig_size == 0 || vbmeta_size < 256 || vbmeta_size > 65536 ||
 +			vbmeta_offset < orig_size || vbmeta_offset + vbmeta_size > (uint64_t)file_size) {
-+		LOGINFO("[REDSTONE] keep-twrp: stock boot hash not found (bad AVB footer)\n");
++		gui_print_color("warning", "I:[REDSTONE] keep-twrp: stock boot hash not found (bad AVB footer)\n");
 +		close(fd);
 +		return false;
 +	}
 +	unsigned char vbmeta[65536];
 +	if (pread(fd, vbmeta, vbmeta_size, vbmeta_offset) != (ssize_t)vbmeta_size ||
 +			memcmp(vbmeta, "AVB0", 4) != 0) {
-+		LOGINFO("[REDSTONE] keep-twrp: stock boot hash not found (bad AVB metadata)\n");
++		gui_print_color("warning", "I:[REDSTONE] keep-twrp: stock boot hash not found (bad AVB metadata)\n");
 +		close(fd);
 +		return false;
 +	}
 +	uint64_t desc_start = 256 + Read_BE64(vbmeta + 12) + Read_BE64(vbmeta + 96);
 +	uint64_t desc_end = desc_start + Read_BE64(vbmeta + 104);
 +	if (desc_start < 256 || desc_end > vbmeta_size) {
-+		LOGINFO("[REDSTONE] keep-twrp: stock boot hash not found (bad AVB descriptors)\n");
++		gui_print_color("warning", "I:[REDSTONE] keep-twrp: stock boot hash not found (bad AVB descriptors)\n");
 +		close(fd);
 +		return false;
 +	}
@@ -149,7 +159,7 @@
 +	}
 +	if (salt == NULL || name != "boot" || algorithm != "sha256" || digest_len != 32 ||
 +			hash_size == 0 || hash_size > (uint64_t)file_size) {
-+		LOGINFO("[REDSTONE] keep-twrp: stock boot hash not found (no boot hash descriptor)\n");
++		gui_print_color("warning", "I:[REDSTONE] keep-twrp: stock boot hash not found (no boot hash descriptor)\n");
 +		close(fd);
 +		return false;
 +	}
@@ -178,11 +188,11 @@
 +	for (int i = 0; i < 32; i++)
 +		snprintf(expected_hex + (i * 2), 3, "%02x", expected[i]);
 +	if (digest->return_digest_string() != expected_hex) {
-+		LOGINFO("[REDSTONE] keep-twrp: stock boot hash not found (image is modified)\n");
++		gui_print_color("warning", "I:[REDSTONE] keep-twrp: stock boot hash not found (image is modified)\n");
 +		close(fd);
 +		return false;
 +	}
-+	LOGINFO("[REDSTONE] keep-twrp: stock boot hash verified\n");
++	gui_print_color("info", "I:[REDSTONE] keep-twrp: stock boot hash verified\n");
 +
 +	uint64_t base = orig_size > hash_size ? orig_size : hash_size;
 +	uint64_t offset = (base + 65535) & ~(uint64_t)65535;
@@ -229,9 +239,9 @@
 +			return false;
 +		}
 +		fsync(pfd);
-+		LOGINFO("[REDSTONE] keep-twrp: patch applied at offset %llu\n", (unsigned long long)offset);
++		gui_print_color("info", "I:[REDSTONE] keep-twrp: patch applied at offset %llu\n", (unsigned long long)offset);
 +	} else {
-+		LOGINFO("[REDSTONE] keep-twrp: patch already applied at offset %llu\n", (unsigned long long)offset);
++		gui_print_color("info", "I:[REDSTONE] keep-twrp: patch already applied at offset %llu\n", (unsigned long long)offset);
 +	}
 +	close(pfd);
 +	return true;
@@ -248,7 +258,7 @@
 +			if (flash_path == "/boot")
 +				Keep_TWRP_Tweak_Boot(full_filename, flash_part);
 +			else
-+				LOGINFO("[REDSTONE] keep-twrp: target is not /boot, nothing to do\n");
++				gui_print_color("info", "I:[REDSTONE] keep-twrp: target is not /boot, nothing to do\n");
 +		}
  	} else {
  		gui_err("invalid_flash=Invalid flash partition specified.");
