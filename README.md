@@ -13,6 +13,18 @@ TWRP 12.1 device tree for the SM-X216B, built with GitHub Actions
 
 3. Boot into recovery.
 
+## Keep TWRP
+
+Samsung, like other OEMs, reinstalls stock recovery on system boot when `boot` matches the
+hash in `install-recovery.sh`. Fixed through a rather novel approach. With **Keep TWRP
+(experimental)** ticked while flashing a stock `boot.img` in "Install Image", we check the
+image against the stock AVB hash, and if it's confirmed stock, one byte of padding is marked.
+That check now fails and TWRP survives without the need for a patched boot image.
+
+<sub>This isn't really useful for most use cases since you'll probably want to hide the
+unlocked bootloader, which needs root modules, but I needed it for a very niche use case and
+maybe someone else does too lol.</sub>
+
 ## Status
 
 Confirmed working currently:
