@@ -32,7 +32,7 @@ Confirmed working currently:
 - touch
 - zip installation
 - image installation in fastboot
-- image installation from internal storage
+- image installation from internal storage (including system images)
 
 This will only ever be tested on my device (SM-X216B, X216BXXS9DYJ5), it is not my
 intention to be a maintainer for this device at this time. It should work on any
